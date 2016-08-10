@@ -1,0 +1,1928 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Weblogic Docker Swarm Cluster",
+  "Mappings": {
+    "RegionMap": {
+      "eu-central-1": {
+        "CENTOSAMI": "ami-9bf712f4",
+        "AWSLINUXAMI": "ami-ea26ce85",
+        "NATAMI": "ami-ae380eb3",
+        "RHELAMI": "ami-875042eb"
+      },
+      "eu-west-1": {
+        "CENTOSAMI": "ami-7abd0209",
+        "AWSLINUXAMI": "ami-f9dd458a",
+        "NATAMI": "ami-14913f63",
+        "RHELAMI": "ami-8b8c57f8"
+      },
+      "us-east-1": {
+        "CENTOSAMI": "ami-6d1c2007",
+        "AWSLINUXAMI": "ami-6869aa05",
+        "NATAMI": "ami-184dc970",
+        "RHELAMI": "ami-2051294a"
+      },
+      "us-west-2": {
+        "CENTOSAMI": "ami-d2c924b2",
+        "AWSLINUXAMI": "ami-7172b611",
+        "NATAMI": "ami-290f4119",
+        "RHELAMI": "ami-775e4f16"
+      },
+      "us-west-1": {
+        "CENTOSAMI": "ami-af4333cf",
+        "AWSLINUXAMI": "ami-31490d51",
+        "NATAMI": "ami-a98396ec",
+        "RHELAMI": "ami-d1315fb1"
+      },
+      "ap-southeast-1": {
+        "CENTOSAMI": "ami-f068a193",
+        "AWSLINUXAMI": "ami-a59b49c6",
+        "NATAMI": "ami-6aa38238",
+        "RHELAMI": "ami-e0c19f83"
+      },
+      "ap-southeast-2": {
+        "CENTOSAMI": "ami-fedafc9d",
+        "AWSLINUXAMI": "ami-dc361ebf",
+        "NATAMI": "ami-893f53b3",
+        "RHELAMI": "ami-e0c19f83"
+      },
+      "ap-northeast-1": {
+        "CENTOSAMI": "ami-eec1c380",
+        "AWSLINUXAMI": "ami-374db956",
+        "NATAMI": "ami-27d6e626",
+        "RHELAMI": "ami-e0c19f83"
+      },
+      "ap-northeast-2": {
+        "CENTOSAMI": "ami-c74789a9",
+        "AWSLINUXAMI": "ami-2b408b45",
+        "NATAMI": "ami-68a46f06",
+        "RHELAMI": "ami-e0c19f83"
+      },
+      "sa-east-1": {
+        "CENTOSAMI": "ami-26b93b4a",
+        "AWSLINUXAMI": "ami-6dd04501",
+        "NATAMI": "ami-8122969c",
+        "RHELAMI": "ami-e0c19f83"
+      }
+    }
+  },
+  "Outputs": {
+    "WeblogicConsole": {
+      "Description": "This is your starting point, please copy this URL into your web browser.",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "SwarmManagerEC2",
+                "PublicIp"
+              ]
+            },
+            "/console"
+          ]
+        ]
+      }
+    },
+    "SampleApplication": {
+      "Description": "This is a sample application with jms configuration.",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "SwarmManagerEC2",
+                "PublicIp"
+              ]
+            },
+            "/sample"
+          ]
+        ]
+      }
+    },
+    "Visualizer": {
+      "Description": "Demo container that displays Docker services on a Docker Swarm a diagram.",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "SwarmManagerEC2",
+                "PublicIp"
+              ]
+            },
+            ":5000"
+          ]
+        ]
+      }
+    },    
+    "SSH": {
+      "Description": "Use this command to ssh into your ADOP Swarm Manager EC2 instance.",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "ssh -i ",
+            { "Ref": "KeyName" },
+            ".pem centos@",
+            {
+              "Fn::GetAtt": [
+                "SwarmManagerEC2",
+                "PublicIp"
+              ]
+            },
+            ""
+          ]
+        ]
+      }
+    }    
+  },
+  "Parameters": {
+    "KeyName": {
+      "Default": "",
+      "Description": "SSH Key pair for accessing your EC2 instance",
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "KeyPairContent": {
+      "Default": "",
+      "Description": "Open the SSH key pair you specified in the KeyName parameter, copy its content and paste it here.",
+      "NoEcho": "true",
+      "Type": "String"
+    },
+    "WorkerEC2VolumeSize": {
+      "Type": "String",
+      "Default": "50",
+      "Description": ""
+    },
+    "WorkerEC2InstanceType": {
+      "Type": "String",
+      "Description": "",
+      "AllowedValues": [
+        "t2.medium",
+        "t2.large",
+        "m4.large",
+        "m4.xlarge",
+        "m3.large",
+        "m3.xlarge"
+      ],
+      "ConstraintDescription": "Must be a valid EC2 HVM instance type.",
+      "Default": "t2.large"
+    }
+  },
+  "Conditions": {},
+  "Resources": {
+    "ElasticIP": {
+      "Type": "AWS::EC2::EIP",
+      "Properties": {},
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "77d8a590-a4b7-4657-ae49-2bace7b74166"
+        }
+      }
+    },
+    "PublicRouteDefault": {
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "VpcInternetGateway"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      },
+      "Type": "AWS::EC2::Route",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "cc4ce313-df1f-42d2-bab5-12efccd9dfd9"
+        }
+      }
+    },
+    "PublicRouteTable": {
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Type": "AWS::EC2::RouteTable",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "4ddb3c75-e8a0-4b89-9744-115cc2a9d1ee"
+        }
+      }
+    },
+    "PublicSubnet": {
+      "Properties": {
+        "CidrBlock": "10.10.1.0/24",
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Type": "AWS::EC2::Subnet",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "869aca7e-e10e-4b3f-9bfd-86e5ff3a00e3"
+        }
+      }
+    },
+    "PublicSubnetPublicRouteTableAssoc": {
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnet"
+        }
+      },
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "49ba56df-a6f9-4eef-a621-d01f453e23d9"
+        }
+      }
+    },
+    "Vpc": {
+      "Properties": {
+        "CidrBlock": "10.10.0.0/16",
+        "EnableDnsHostnames": "true",
+        "EnableDnsSupport": "true"
+      },
+      "Type": "AWS::EC2::VPC",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "a44e677b-c679-482b-929c-f1a7aa112926"
+        }
+      }
+    },
+    "VpcGatewayAttachment": {
+      "Properties": {
+        "InternetGatewayId": {
+          "Ref": "VpcInternetGateway"
+        },
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "82dcb3af-1538-44be-b9ad-cda2335288f1"
+        }
+      }
+    },
+    "VpcInternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "a25e58c0-2ee7-41d4-ab1f-42f4d636c535"
+        }
+      }
+    },
+    "PrivateRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "c48aeab8-eb45-4a74-a89a-8688260aae5d"
+        }
+      }
+    },
+    "PrivateRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateRouteTable"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "NatGatewayId": {
+          "Ref": "NAT"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "0a40d0ca-3581-4835-9597-e946ea1df989"
+        }
+      }
+    },
+    "PrivateSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.10.2.0/24",
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "47a0f538-656e-497c-9a80-fbc052fccd00"
+        }
+      }
+    },
+    "PrivateSubnetPrivateRouteTableAssoc": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PrivateSubnet"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "049f94c1-5d6d-4cf8-9f02-03d83e9dde62"
+        }
+      }
+    },
+    "SwarmWorkerEC2": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "DeleteOnTermination": "true",
+              "VolumeSize": {
+                "Ref": "WorkerEC2VolumeSize"
+              },
+              "VolumeType": "gp2"
+            }
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "AssociatePublicIpAddress": "false",
+            "DeleteOnTermination": "true",
+            "DeviceIndex": "0",
+            "GroupSet": [
+              {
+                "Ref": "ApplicationSG"
+              },
+              {
+                "Ref": "DockerSwarmSG"
+              }
+            ],
+            "SubnetId": {
+              "Ref": "PrivateSubnet"
+            }
+          }
+        ],
+        "InstanceType": {
+          "Ref": "WorkerEC2InstanceType"
+        },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "CENTOSAMI"
+          ]
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "AWS::StackName"
+                  },
+                  "SwarmWorker"
+                ]
+              ]
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "sudo su\n",
+                "cat > /etc/yum.repos.d/docker.repo <<-'EOF'\n",
+                "[dockerrepo]\n",
+                "name=Docker Repository\n",
+                "baseurl=https://yum.dockerproject.org/repo/main/centos/$releasever/\n",
+                "enabled=1\n",
+                "gpgcheck=1\n",
+                "gpgkey=https://yum.dockerproject.org/gpg\n",
+                "EOF\n",
+                "yum install -y docker-engine.x86_64\n",
+                "systemctl enable docker\n",
+                "systemctl start docker\n",
+                "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",",
+                "\"Reason\" : \"ADOP is ready\",",
+                "\"UniqueId\" : \"IDAdopCompletion\",",
+                "\"Data\" : \"Done\"}' ",
+                "\"",
+                {
+                  "Ref": "SwarmWaitConditionHandle2"
+                },
+                "\"\n",
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
+        }
+      },
+      "DependsOn": [
+        "NAT"
+      ]
+    },
+    "DockerSwarmSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Docker Engine Security Group.",
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "2377",
+            "IpProtocol": "tcp",
+            "ToPort": "2377"
+          },
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "4789",
+            "IpProtocol": "udp",
+            "ToPort": "4789"
+          },
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "7946",
+            "IpProtocol": "tcp",
+            "ToPort": "7946"
+          },
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "7946",
+            "IpProtocol": "udp",
+            "ToPort": "7946"
+          }
+        ],
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2"
+        }
+      }
+    },
+    "NAT": {
+      "Type": "AWS::EC2::NatGateway",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "ElasticIP",
+            "AllocationId"
+          ]
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnet"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "cd7a44a6-12cf-42cb-b65a-20b64ad667d0"
+        }
+      }
+    },
+    "OuterProxySG": {
+      "Properties": {
+        "GroupDescription": "Nat Outer Proxy Security Group",
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": "22",
+            "IpProtocol": "tcp",
+            "ToPort": "22"
+          },
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": "80",
+            "IpProtocol": "tcp",
+            "ToPort": "80"
+          },
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": "443",
+            "IpProtocol": "tcp",
+            "ToPort": "443"
+          },
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": "8001",
+            "IpProtocol": "tcp",
+            "ToPort": "8001"
+          },
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": "5000",
+            "IpProtocol": "tcp",
+            "ToPort": "5000"
+          }
+        ],
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "5f8a92e2-f223-4168-893e-02e01796aa86"
+        }
+      }
+    },
+    "SwarmWorker2EC2": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "acc84ab3-d96c-4792-bba8-1eaee2e799aa"
+        }
+      },
+      "Properties": {
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "DeleteOnTermination": "true",
+              "VolumeSize": {
+                "Ref": "WorkerEC2VolumeSize"
+              },
+              "VolumeType": "gp2"
+            }
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "AssociatePublicIpAddress": "false",
+            "DeleteOnTermination": "true",
+            "DeviceIndex": "0",
+            "GroupSet": [
+              {
+                "Ref": "ApplicationSG"
+              },
+              {
+                "Ref": "DockerSwarmSG"
+              }
+            ],
+            "SubnetId": {
+              "Ref": "PrivateSubnet"
+            }
+          }
+        ],
+        "InstanceType": {
+          "Ref": "WorkerEC2InstanceType"
+        },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "CENTOSAMI"
+          ]
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "AWS::StackName"
+                  },
+                  "SwarmWorker2"
+                ]
+              ]
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "sudo su\n",
+                "cat > /etc/yum.repos.d/docker.repo <<-'EOF'\n",
+                "[dockerrepo]\n",
+                "name=Docker Repository\n",
+                "baseurl=https://yum.dockerproject.org/repo/main/centos/$releasever/\n",
+                "enabled=1\n",
+                "gpgcheck=1\n",
+                "gpgkey=https://yum.dockerproject.org/gpg\n",
+                "EOF\n",
+                "yum install -y docker-engine.x86_64\n",
+                "systemctl enable docker\n",
+                "systemctl start docker\n",
+                "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",",
+                "\"Reason\" : \"ADOP is ready\",",
+                "\"UniqueId\" : \"IDAdopCompletion\",",
+                "\"Data\" : \"Done\"}' ",
+                "\"",
+                {
+                  "Ref": "SwarmWaitConditionHandle1"
+                },
+                "\"\n",
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "DependsOn": [
+        "Vpc",
+        "NAT"
+      ]
+    },
+    "SwarmManagerEC2": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "DeleteOnTermination": "true",
+              "VolumeSize": 20,
+              "VolumeType": "gp2"
+            }
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "AssociatePublicIpAddress": "true",
+            "DeleteOnTermination": "true",
+            "DeviceIndex": "0",
+            "GroupSet": [
+              {
+                "Ref": "DockerSwarmSG"
+              },
+              {
+                "Ref": "OuterProxySG"
+              }
+            ],
+            "SubnetId": {
+              "Ref": "PublicSubnet"
+            }
+          }
+        ],
+        "InstanceType": "t2.micro",
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "CENTOSAMI"
+          ]
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "AWS::StackName"
+                  },
+                  "SwarmManager"
+                ]
+              ]
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "sudo su\n",
+                "cat > /etc/yum.repos.d/docker.repo <<-'EOF'\n",
+                "[dockerrepo]\n",
+                "name=Docker Repository\n",
+                "baseurl=https://yum.dockerproject.org/repo/main/centos/$releasever/\n",
+                "enabled=1\n",
+                "gpgcheck=1\n",
+                "gpgkey=https://yum.dockerproject.org/gpg\n",
+                "EOF\n",
+                "yum install -y docker-engine.x86_64\n",
+                "systemctl enable docker\n",
+                "systemctl start docker\n",
+                "yum -y install epel-release\n",
+                "yum install -y ansible python-boto\n",
+                "sed -i 's/#host_key_checking/host_key_checking/g' /etc/ansible/ansible.cfg\n",
+                "ln –sv /usr/local/bin/ansible /usr/bin/ansible\n",
+                "ln –sv /usr/local/bin/ansible-playbook /usr/bin/ansible-playbook\n",
+                "cat > /tmp/ssh_key <<EOF\n",
+                "\n",
+                {
+                  "Ref": "KeyPairContent"
+                },
+                "\n",
+                "EOF\n",
+                "cat /tmp/ssh_key |",
+                " sed \"s/BEGIN RSA PRIVATE KEY/begin/g\" |",
+                " sed \"s/END RSA PRIVATE KEY/end/g\" |",
+                " sed \"s/ /\\n/g\" | sed \"s/begin/BEGIN RSA PRIVATE KEY/g\" |",
+                " sed \"s/end/END RSA PRIVATE KEY/g\" > ~/sudo-user.pem\n",
+                "chmod 600 ~/sudo-user.pem && rm -f /tmp/ssh_key\n",
+                "cat > /opt/ansible-hosts <<EOF\n",
+                "[workers]\n",
+                {
+                  "Fn::GetAtt": [
+                    "SwarmWorkerEC2",
+                    "PrivateIp"
+                  ]
+                },
+                "\n",
+                {
+                  "Fn::GetAtt": [
+                    "SwarmWorker2EC2",
+                    "PrivateIp"
+                  ]
+                },
+                "\n",
+                "EOF\n",
+                "docker swarm init | tee /opt/swarm-join-commands.txt\n",
+                "SWARM_JOIN_WORKER_CMD=\"$(cat /opt/swarm-join-commands.txt | grep --after-context=3 \"docker swarm join\" | head -3)\"\n",
+                "cd /opt\n",
+                "PUBLIC_IP=$(curl http://instance-data/latest/meta-data/public-ipv4)\n",
+                "docker run -it -d -p 5000:5000 -e HOST=$PUBLIC_IP -e PORT=5000 -v /var/run/docker.sock:/var/run/docker.sock manomarks/visualizer\n",
+                "ansible workers -i /opt/ansible-hosts -m ping -u centos --private-key ~/sudo-user.pem > ansible-conn-test\n",
+                "ansible workers -i /opt/ansible-hosts -m shell -a \"$SWARM_JOIN_WORKER_CMD\" -u centos --become --become-user root --private-key ~/sudo-user.pem > swarm-join.log\n",
+                "docker network create weblogic-network -d overlay\n",
+                "docker service create --name mysql -e MYSQL_ROOT_PASSWORD=root -e MYSQL_USER=mysql -e MYSQL_PASSWORD=mysqlpwd -e MYSQL_DATABASE=dockerdb -p 3306:3306 --network weblogic-network --constraint 'node.role == worker' mysql:5.7\n",
+                "docker service create --name adminserver -e DS_NAME=\"mysqlds\" -e DS_DB_TYPE=\"mysql\" -e DS_DB_NAME=\"dockerdb\" -e DS_JNDI_NAME=\"jdbc/MySqlDS\" -e DS_JDBC_DRIVER=\"com.mysql.jdbc.Driver\" -e DS_DB_HOST=\"mysql\" -e \"DS_DB_USER=root\" -e DS_JDBC_URL=\"jdbc:mysql://mysql:3306/dockerdb\" -e DS_DB_PASSWORD=\"root\" -e DS_DB_PORT=\"3306\" -p 80:8001 --network weblogic-network --constraint 'node.role == worker' dockerhub.accenture.com/adop-afpo/oracle-weblogic:1221-app-jms-domain\n",
+                "docker service update --replicas=3 adminserver\n",
+                "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",",
+                "\"Reason\" : \"Swarm Manager is ready\",",
+                "\"UniqueId\" : \"IDManager\",",
+                "\"Data\" : \"Done\"}' ",
+                "\"",
+                {
+                  "Ref": "SwarmWaitConditionHandle"
+                },
+                "\"\n",
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "9cf16a38-a34f-4057-8536-923c993922ed"
+        }
+      },
+      "DependsOn": [
+        "SwarmWaitCondition1",
+        "SwarmWaitCondition2"
+      ]
+    },
+    "SwarmWaitConditionHandle1": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle",
+      "Properties": {},
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "e8e64ef5-27d2-4511-9a8f-4d4be679889c"
+        }
+      }
+    },
+    "SwarmWaitCondition1": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "Properties": {
+        "Handle": {
+          "Ref": "SwarmWaitConditionHandle1"
+        },
+        "Timeout": "1500"
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "9f45e352-2c6b-44a7-bdb6-518809801d32"
+        }
+      },
+      "DependsOn": [
+        "SwarmWorker2EC2"
+      ]
+    },
+    "SwarmWaitCondition2": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "Properties": {
+        "Handle": {
+          "Ref": "SwarmWaitConditionHandle2"
+        },
+        "Timeout": "2500"
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "0eef5043-0727-47d5-8591-648eaf4ca05a"
+        }
+      },
+      "DependsOn": [
+        "SwarmWorkerEC2"
+      ]
+    },
+    "SwarmWaitConditionHandle2": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle",
+      "Properties": {},
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "7934e36f-378a-4447-aa93-674ae8a35be6"
+        }
+      }
+    },
+    "SwarmWaitCondition": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "Properties": {
+        "Handle": {
+          "Ref": "SwarmWaitConditionHandle"
+        },
+        "Timeout": "3500"
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "17e58e86-83ce-49eb-a22e-ff922689cc5d"
+        }
+      },
+      "DependsOn": [
+        "SwarmManagerEC2"
+      ]
+    },
+    "SwarmWaitConditionHandle": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle",
+      "Properties": {},
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "923f5b8b-fd25-47e8-b594-eb47213bfd84"
+        }
+      }
+    },
+    "ApplicationSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Weblogic Security Group.",
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "8001",
+            "IpProtocol": "tcp",
+            "ToPort": "8001"
+          },
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "7001",
+            "IpProtocol": "tcp",
+            "ToPort": "7001"
+          },
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "22",
+            "IpProtocol": "tcp",
+            "ToPort": "22"
+          },
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "3306",
+            "IpProtocol": "tcp",
+            "ToPort": "3306"
+          },
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "80",
+            "IpProtocol": "tcp",
+            "ToPort": "80"
+          }
+        ],
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "df226a1c-0676-474b-9789-405a97e71fb4"
+        }
+      }
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Designer": {
+      "a25e58c0-2ee7-41d4-ab1f-42f4d636c535": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1350,
+          "y": 610
+        },
+        "z": 1,
+        "embeds": []
+      },
+      "a44e677b-c679-482b-929c-f1a7aa112926": {
+        "size": {
+          "width": 600,
+          "height": 420
+        },
+        "position": {
+          "x": 1080,
+          "y": 730
+        },
+        "z": 1,
+        "embeds": [
+          "df226a1c-0676-474b-9789-405a97e71fb4",
+          "5f8a92e2-f223-4168-893e-02e01796aa86",
+          "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2",
+          "47a0f538-656e-497c-9a80-fbc052fccd00",
+          "c48aeab8-eb45-4a74-a89a-8688260aae5d",
+          "869aca7e-e10e-4b3f-9bfd-86e5ff3a00e3",
+          "4ddb3c75-e8a0-4b89-9744-115cc2a9d1ee"
+        ]
+      },
+      "35cfa4d8-7b76-4317-a01a-96dbf919bd0d": {
+        "size": {
+          "width": 240,
+          "height": 240
+        },
+        "position": {
+          "x": 590,
+          "y": 390
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": [
+          "eeee439c-93d4-4d5d-904e-8de917cf1f40",
+          "cba4c0fc-c175-4f41-88be-bdcd9a25a862",
+          "cd66cd71-b482-4f28-92a6-11dc601a5597"
+        ]
+      },
+      "5d410393-db64-4d4b-836d-a23ab8561339": {
+        "size": {
+          "width": 170,
+          "height": 160
+        },
+        "position": {
+          "x": 340,
+          "y": 430
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": [
+          "655d7159-0e6b-41f6-b58d-d795e5b20e7a"
+        ]
+      },
+      "b35c0812-8292-43d4-aaf9-ec5587d06c6e": {
+        "source": {
+          "id": "5d410393-db64-4d4b-836d-a23ab8561339"
+        },
+        "target": {
+          "id": "35cfa4d8-7b76-4317-a01a-96dbf919bd0d"
+        },
+        "z": 2
+      },
+      "82dcb3af-1538-44be-b9ad-cda2335288f1": {
+        "source": {
+          "id": "a25e58c0-2ee7-41d4-ab1f-42f4d636c535"
+        },
+        "target": {
+          "id": "a44e677b-c679-482b-929c-f1a7aa112926"
+        },
+        "z": 1
+      },
+      "869aca7e-e10e-4b3f-9bfd-86e5ff3a00e3": {
+        "size": {
+          "width": 190,
+          "height": 150
+        },
+        "position": {
+          "x": 1360,
+          "y": 770
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": [
+          "cd7a44a6-12cf-42cb-b65a-20b64ad667d0",
+          "9cf16a38-a34f-4057-8536-923c993922ed"
+        ]
+      },
+      "4ddb3c75-e8a0-4b89-9744-115cc2a9d1ee": {
+        "size": {
+          "width": 160,
+          "height": 150
+        },
+        "position": {
+          "x": 1130,
+          "y": 770
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": [
+          "cc4ce313-df1f-42d2-bab5-12efccd9dfd9"
+        ]
+      },
+      "49ba56df-a6f9-4eef-a621-d01f453e23d9": {
+        "source": {
+          "id": "4ddb3c75-e8a0-4b89-9744-115cc2a9d1ee"
+        },
+        "target": {
+          "id": "869aca7e-e10e-4b3f-9bfd-86e5ff3a00e3"
+        },
+        "z": 2
+      },
+      "cc4ce313-df1f-42d2-bab5-12efccd9dfd9": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1180,
+          "y": 820
+        },
+        "z": 3,
+        "parent": "4ddb3c75-e8a0-4b89-9744-115cc2a9d1ee",
+        "embeds": [],
+        "references": [
+          "a25e58c0-2ee7-41d4-ab1f-42f4d636c535"
+        ]
+      },
+      "9476a6df-d58e-42b8-93db-8d04e5f5b7f4": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 880,
+          "y": 230
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": []
+      },
+      "97c64025-438f-4af4-afd1-18baa33f0dbc": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 680,
+          "y": 230
+        },
+        "z": 3,
+        "parent": "869aca7e-e10e-4b3f-9bfd-86e5ff3a00e3",
+        "embeds": [],
+        "isrelatedto": [
+          "9476a6df-d58e-42b8-93db-8d04e5f5b7f4",
+          "0ed6b090-237d-4f57-ad37-f77099070540"
+        ]
+      },
+      "655d7159-0e6b-41f6-b58d-d795e5b20e7a": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 390,
+          "y": 480
+        },
+        "z": 3,
+        "parent": "5d410393-db64-4d4b-836d-a23ab8561339",
+        "embeds": [],
+        "references": [
+          "97c64025-438f-4af4-afd1-18baa33f0dbc"
+        ]
+      },
+      "5f8a92e2-f223-4168-893e-02e01796aa86": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1590,
+          "y": 760
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": []
+      },
+      "cd66cd71-b482-4f28-92a6-11dc601a5597": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 620,
+          "y": 450
+        },
+        "z": 3,
+        "parent": "35cfa4d8-7b76-4317-a01a-96dbf919bd0d",
+        "embeds": [],
+        "dependson": [
+          "50a0d189-8c47-44b2-8eff-17759eb9c659",
+          "97c64025-438f-4af4-afd1-18baa33f0dbc",
+          "a0c96e64-00eb-47a4-8b7c-70035ccc71e9"
+        ],
+        "isrelatedto": [
+          "9476a6df-d58e-42b8-93db-8d04e5f5b7f4",
+          "a44e677b-c679-482b-929c-f1a7aa112926",
+          "5f8a92e2-f223-4168-893e-02e01796aa86",
+          "89b96fce-9d10-40a4-9707-28adc03432e7",
+          "6378e06e-56df-465c-baa5-1984f0c2ff48",
+          "2081c4d8-19c1-42cd-ac1b-f37218066a19"
+        ]
+      },
+      "6378e06e-56df-465c-baa5-1984f0c2ff48": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 880,
+          "y": 390
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": []
+      },
+      "e7511ce7-d6ad-4efa-9a80-071b8b532447": {
+        "source": {
+          "id": "cd66cd71-b482-4f28-92a6-11dc601a5597"
+        },
+        "target": {
+          "id": "50a0d189-8c47-44b2-8eff-17759eb9c659"
+        },
+        "z": 4
+      },
+      "77d8a590-a4b7-4657-ae49-2bace7b74166": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1430,
+          "y": 610
+        },
+        "z": 0,
+        "embeds": []
+      },
+      "820de39c-9417-4a1d-ad9d-98e027eb1a3f": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 600,
+          "y": 590
+        },
+        "z": 3,
+        "parent": "35cfa4d8-7b76-4317-a01a-96dbf919bd0d",
+        "embeds": [],
+        "dependson": [
+          "50a0d189-8c47-44b2-8eff-17759eb9c659",
+          "97c64025-438f-4af4-afd1-18baa33f0dbc"
+        ],
+        "isrelatedto": [
+          "9476a6df-d58e-42b8-93db-8d04e5f5b7f4",
+          "a44e677b-c679-482b-929c-f1a7aa112926",
+          "5f8a92e2-f223-4168-893e-02e01796aa86",
+          "89b96fce-9d10-40a4-9707-28adc03432e7",
+          "6378e06e-56df-465c-baa5-1984f0c2ff48"
+        ]
+      },
+      "a7beba5f-00e5-4d95-b03f-be9fc6d2aab5": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 520,
+          "y": 700
+        },
+        "z": 1,
+        "embeds": [],
+        "references": [
+          "2081c4d8-19c1-42cd-ac1b-f37218066a19"
+        ],
+        "dependson": [
+          "cd66cd71-b482-4f28-92a6-11dc601a5597"
+        ]
+      },
+      "2081c4d8-19c1-42cd-ac1b-f37218066a19": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 610,
+          "y": 700
+        },
+        "z": 1,
+        "embeds": []
+      },
+      "3d85fceb-fe8b-4481-b64f-d6d957976075": {
+        "source": {
+          "id": "a7beba5f-00e5-4d95-b03f-be9fc6d2aab5"
+        },
+        "target": {
+          "id": "cd66cd71-b482-4f28-92a6-11dc601a5597"
+        },
+        "z": 11
+      },
+      "b99d6ff0-701c-486c-b251-dd9f37c3bf91": {
+        "source": {
+          "id": "50a0d189-8c47-44b2-8eff-17759eb9c659"
+        },
+        "target": {
+          "id": "a7beba5f-00e5-4d95-b03f-be9fc6d2aab5"
+        },
+        "z": 4
+      },
+      "cba4c0fc-c175-4f41-88be-bdcd9a25a862": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 730,
+          "y": 450
+        },
+        "z": 3,
+        "parent": "35cfa4d8-7b76-4317-a01a-96dbf919bd0d",
+        "embeds": [],
+        "dependson": [
+          "50a0d189-8c47-44b2-8eff-17759eb9c659",
+          "97c64025-438f-4af4-afd1-18baa33f0dbc",
+          "a0c96e64-00eb-47a4-8b7c-70035ccc71e9"
+        ],
+        "isrelatedto": [
+          "9476a6df-d58e-42b8-93db-8d04e5f5b7f4",
+          "a44e677b-c679-482b-929c-f1a7aa112926",
+          "5f8a92e2-f223-4168-893e-02e01796aa86",
+          "89b96fce-9d10-40a4-9707-28adc03432e7",
+          "6378e06e-56df-465c-baa5-1984f0c2ff48",
+          "2081c4d8-19c1-42cd-ac1b-f37218066a19",
+          "4639eafb-f924-47cc-9b96-2e3d5c363e1d"
+        ]
+      },
+      "007d682c-145c-42ac-a10f-dbb3c791ca22": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 990,
+          "y": 540
+        },
+        "z": 1,
+        "embeds": [],
+        "references": [
+          "4639eafb-f924-47cc-9b96-2e3d5c363e1d"
+        ],
+        "dependson": [
+          "cba4c0fc-c175-4f41-88be-bdcd9a25a862"
+        ]
+      },
+      "4639eafb-f924-47cc-9b96-2e3d5c363e1d": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 990,
+          "y": 450
+        },
+        "z": 1,
+        "embeds": []
+      },
+      "4f373403-1ec4-4a33-9390-f1e9c3e48b03": {
+        "source": {
+          "id": "007d682c-145c-42ac-a10f-dbb3c791ca22"
+        },
+        "target": {
+          "id": "cba4c0fc-c175-4f41-88be-bdcd9a25a862"
+        },
+        "z": 11
+      },
+      "ae7640e6-2e2a-4304-b19a-3c52707580c9": {
+        "source": {
+          "id": "50a0d189-8c47-44b2-8eff-17759eb9c659"
+        },
+        "target": {
+          "id": "007d682c-145c-42ac-a10f-dbb3c791ca22"
+        },
+        "z": 11
+      },
+      "a0c96e64-00eb-47a4-8b7c-70035ccc71e9": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1010,
+          "y": 210
+        },
+        "z": 1,
+        "embeds": [],
+        "references": [
+          "0ed6b090-237d-4f57-ad37-f77099070540"
+        ],
+        "dependson": [
+          "97c64025-438f-4af4-afd1-18baa33f0dbc"
+        ]
+      },
+      "0ed6b090-237d-4f57-ad37-f77099070540": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1010,
+          "y": 290
+        },
+        "z": 0,
+        "embeds": []
+      },
+      "47b1dfa3-3434-4265-96f4-25a6ef11964d": {
+        "source": {
+          "id": "a0c96e64-00eb-47a4-8b7c-70035ccc71e9"
+        },
+        "target": {
+          "id": "97c64025-438f-4af4-afd1-18baa33f0dbc"
+        },
+        "z": 11
+      },
+      "80eb011b-5d3f-4e10-9728-392827cc4a80": {
+        "source": {
+          "id": "cba4c0fc-c175-4f41-88be-bdcd9a25a862"
+        },
+        "target": {
+          "id": "a0c96e64-00eb-47a4-8b7c-70035ccc71e9"
+        },
+        "z": 4
+      },
+      "f55b605c-abf9-4903-8caf-d9b638f1e919": {
+        "source": {
+          "id": "cd66cd71-b482-4f28-92a6-11dc601a5597"
+        },
+        "target": {
+          "id": "a0c96e64-00eb-47a4-8b7c-70035ccc71e9"
+        },
+        "z": 4
+      },
+      "eeee439c-93d4-4d5d-904e-8de917cf1f40": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 730,
+          "y": 540
+        },
+        "z": 3,
+        "parent": "35cfa4d8-7b76-4317-a01a-96dbf919bd0d",
+        "embeds": [],
+        "dependson": [
+          "a0c96e64-00eb-47a4-8b7c-70035ccc71e9"
+        ],
+        "isrelatedto": [
+          "6378e06e-56df-465c-baa5-1984f0c2ff48",
+          "7d14e476-f68d-4015-9068-5b65c9d34560"
+        ]
+      },
+      "68a71f69-06b6-44b1-a4e7-97ca8995297f": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 720,
+          "y": 700
+        },
+        "z": 0,
+        "embeds": [],
+        "references": [
+          "7d14e476-f68d-4015-9068-5b65c9d34560"
+        ],
+        "dependson": [
+          "a0c96e64-00eb-47a4-8b7c-70035ccc71e9",
+          "eeee439c-93d4-4d5d-904e-8de917cf1f40"
+        ]
+      },
+      "7d14e476-f68d-4015-9068-5b65c9d34560": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 810,
+          "y": 700
+        },
+        "z": 0,
+        "embeds": []
+      },
+      "0eef5043-0727-47d5-8591-648eaf4ca05a": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1580,
+          "y": 1180
+        },
+        "z": 0,
+        "embeds": [],
+        "references": [
+          "7934e36f-378a-4447-aa93-674ae8a35be6"
+        ],
+        "dependson": [
+          "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
+        ]
+      },
+      "7934e36f-378a-4447-aa93-674ae8a35be6": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1480,
+          "y": 1180
+        },
+        "z": 1,
+        "embeds": []
+      },
+      "c48aeab8-eb45-4a74-a89a-8688260aae5d": {
+        "size": {
+          "width": 160,
+          "height": 140
+        },
+        "position": {
+          "x": 1130,
+          "y": 970
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": [
+          "0a40d0ca-3581-4835-9597-e946ea1df989"
+        ]
+      },
+      "0a40d0ca-3581-4835-9597-e946ea1df989": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1180,
+          "y": 1010
+        },
+        "z": 3,
+        "parent": "c48aeab8-eb45-4a74-a89a-8688260aae5d",
+        "embeds": [],
+        "isrelatedto": [
+          "cd7a44a6-12cf-42cb-b65a-20b64ad667d0"
+        ]
+      },
+      "47a0f538-656e-497c-9a80-fbc052fccd00": {
+        "size": {
+          "width": 210,
+          "height": 150
+        },
+        "position": {
+          "x": 1360,
+          "y": 960
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": [
+          "acc84ab3-d96c-4792-bba8-1eaee2e799aa",
+          "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
+        ]
+      },
+      "7b45ae17-bef2-4fd5-a5cd-58888c87753d": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1480,
+          "y": 1010
+        },
+        "z": 3,
+        "parent": "47a0f538-656e-497c-9a80-fbc052fccd00",
+        "embeds": [],
+        "dependson": [
+          "cd7a44a6-12cf-42cb-b65a-20b64ad667d0"
+        ],
+        "isrelatedto": [
+          "8246d075-3d2a-4ab5-934f-45a154f6eed4",
+          "a31d4eed-b455-4c7c-8658-aedba20d70b4",
+          "a2c90913-332c-4f4c-a123-63d38abeed7e",
+          "a44e677b-c679-482b-929c-f1a7aa112926",
+          "7934e36f-378a-4447-aa93-674ae8a35be6",
+          "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2",
+          "df226a1c-0676-474b-9789-405a97e71fb4",
+          "f566539b-e643-4c4e-900a-2212e963603f"
+        ]
+      },
+      "9e0ae4bd-010f-45cf-8789-3a897dbc7261": {
+        "source": {
+          "id": "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
+        },
+        "target": {
+          "id": "a2c90913-332c-4f4c-a123-63d38abeed7e"
+        },
+        "z": 4
+      },
+      "049f94c1-5d6d-4cf8-9f02-03d83e9dde62": {
+        "source": {
+          "id": "c48aeab8-eb45-4a74-a89a-8688260aae5d"
+        },
+        "target": {
+          "id": "47a0f538-656e-497c-9a80-fbc052fccd00"
+        },
+        "z": 2
+      },
+      "daf4668d-3e47-43de-9240-b7231f6dd143": {
+        "source": {
+          "id": "b3e4116d-b0f6-46a3-a269-224be71ffc07"
+        },
+        "target": {
+          "id": "a2c90913-332c-4f4c-a123-63d38abeed7e"
+        },
+        "z": 11
+      },
+      "dad8c234-e53d-4d8b-bfbf-109d8b772223": {
+        "source": {
+          "id": "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
+        },
+        "target": {
+          "id": "b3e4116d-b0f6-46a3-a269-224be71ffc07"
+        },
+        "z": 11
+      },
+      "14a3f198-dd8b-4059-9b04-eb35260974a5": {
+        "source": {
+          "id": "0eef5043-0727-47d5-8591-648eaf4ca05a"
+        },
+        "target": {
+          "id": "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
+        },
+        "z": 12
+      },
+      "61dc1fce-adbb-4784-b958-6851664ebe5e": {
+        "source": {
+          "id": "a2c90913-332c-4f4c-a123-63d38abeed7e"
+        },
+        "target": {
+          "id": "82dcb3af-1538-44be-b9ad-cda2335288f1"
+        },
+        "z": 11
+      },
+      "d165c9bd-38f6-4e2b-aea9-f1fa5e855763": {
+        "source": {
+          "id": "7b45ae17-bef2-4fd5-a5cd-58888c87753d",
+          "selector": "g:nth-child(1) g:nth-child(4) g:nth-child(5) circle:nth-child(1)     ",
+          "port": "AWS::DependencyLink-*"
+        },
+        "target": {
+          "id": "b3e4116d-b0f6-46a3-a269-224be71ffc07"
+        },
+        "z": 12
+      },
+      "43968747-a691-43b3-ba51-4d43cb902b8e": {
+        "source": {
+          "id": "0eef5043-0727-47d5-8591-648eaf4ca05a"
+        },
+        "target": {
+          "id": "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
+        },
+        "z": 11
+      },
+      "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1590,
+          "y": 830
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": []
+      },
+      "acc84ab3-d96c-4792-bba8-1eaee2e799aa": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1380,
+          "y": 1010
+        },
+        "z": 3,
+        "parent": "47a0f538-656e-497c-9a80-fbc052fccd00",
+        "embeds": [],
+        "dependson": [
+          "a44e677b-c679-482b-929c-f1a7aa112926",
+          "cd7a44a6-12cf-42cb-b65a-20b64ad667d0"
+        ],
+        "isrelatedto": [
+          "7934e36f-378a-4447-aa93-674ae8a35be6",
+          "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2",
+          "df226a1c-0676-474b-9789-405a97e71fb4",
+          "f566539b-e643-4c4e-900a-2212e963603f",
+          "e8e64ef5-27d2-4511-9a8f-4d4be679889c"
+        ]
+      },
+      "09c827e3-a0b6-4043-8e9c-6aa1c58aa4ac": {
+        "source": {
+          "id": "acc84ab3-d96c-4792-bba8-1eaee2e799aa"
+        },
+        "target": {
+          "id": "b3e4116d-b0f6-46a3-a269-224be71ffc07"
+        },
+        "z": 11
+      },
+      "df226a1c-0676-474b-9789-405a97e71fb4": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1590,
+          "y": 910
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": []
+      },
+      "cd7a44a6-12cf-42cb-b65a-20b64ad667d0": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1390,
+          "y": 820
+        },
+        "z": 3,
+        "parent": "869aca7e-e10e-4b3f-9bfd-86e5ff3a00e3",
+        "embeds": [],
+        "isrelatedto": [
+          "77d8a590-a4b7-4657-ae49-2bace7b74166"
+        ]
+      },
+      "9cf16a38-a34f-4057-8536-923c993922ed": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1470,
+          "y": 820
+        },
+        "z": 3,
+        "parent": "869aca7e-e10e-4b3f-9bfd-86e5ff3a00e3",
+        "embeds": [],
+        "dependson": [
+          "e8e64ef5-27d2-4511-9a8f-4d4be679889c",
+          "9f45e352-2c6b-44a7-bdb6-518809801d32",
+          "0eef5043-0727-47d5-8591-648eaf4ca05a"
+        ],
+        "isrelatedto": [
+          "df226a1c-0676-474b-9789-405a97e71fb4",
+          "f566539b-e643-4c4e-900a-2212e963603f",
+          "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2",
+          "7934e36f-378a-4447-aa93-674ae8a35be6",
+          "5f8a92e2-f223-4168-893e-02e01796aa86",
+          "923f5b8b-fd25-47e8-b594-eb47213bfd84",
+          "7b45ae17-bef2-4fd5-a5cd-58888c87753d",
+          "acc84ab3-d96c-4792-bba8-1eaee2e799aa"
+        ]
+      },
+      "9f45e352-2c6b-44a7-bdb6-518809801d32": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1280,
+          "y": 1180
+        },
+        "z": 0,
+        "embeds": [],
+        "references": [
+          "e8e64ef5-27d2-4511-9a8f-4d4be679889c"
+        ],
+        "dependson": [
+          "acc84ab3-d96c-4792-bba8-1eaee2e799aa"
+        ]
+      },
+      "e8e64ef5-27d2-4511-9a8f-4d4be679889c": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1380,
+          "y": 1180
+        },
+        "z": 0,
+        "embeds": []
+      },
+      "6158ab2a-93ff-41dc-a036-0352536cd809": {
+        "source": {
+          "id": "9f45e352-2c6b-44a7-bdb6-518809801d32"
+        },
+        "target": {
+          "id": "acc84ab3-d96c-4792-bba8-1eaee2e799aa"
+        },
+        "z": 11
+      },
+      "ad691ef6-132f-4cd2-ab6f-e35a4cc664bf": {
+        "source": {
+          "id": "9cf16a38-a34f-4057-8536-923c993922ed"
+        },
+        "target": {
+          "id": "e8e64ef5-27d2-4511-9a8f-4d4be679889c"
+        },
+        "z": 12
+      },
+      "00c124d0-e0e6-4e84-a457-6d766263452e": {
+        "source": {
+          "id": "acc84ab3-d96c-4792-bba8-1eaee2e799aa"
+        },
+        "target": {
+          "id": "cd7a44a6-12cf-42cb-b65a-20b64ad667d0"
+        },
+        "z": 11
+      },
+      "5f7acc79-c368-4c5b-98ef-7dbac5838b26": {
+        "source": {
+          "id": "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
+        },
+        "target": {
+          "id": "cd7a44a6-12cf-42cb-b65a-20b64ad667d0"
+        },
+        "z": 12
+      },
+      "17e58e86-83ce-49eb-a22e-ff922689cc5d": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1510,
+          "y": 610
+        },
+        "z": 0,
+        "embeds": [],
+        "references": [
+          "923f5b8b-fd25-47e8-b594-eb47213bfd84"
+        ],
+        "dependson": [
+          "9cf16a38-a34f-4057-8536-923c993922ed"
+        ]
+      },
+      "923f5b8b-fd25-47e8-b594-eb47213bfd84": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1610,
+          "y": 610
+        },
+        "z": 0,
+        "embeds": []
+      },
+      "30c6492a-2bc9-4878-8121-4b0503324929": {
+        "source": {
+          "id": "17e58e86-83ce-49eb-a22e-ff922689cc5d",
+          "selector": "g:nth-child(1) g:nth-child(4) g:nth-child(2) circle:nth-child(1)     ",
+          "port": "AWS::DependencyLink-*"
+        },
+        "target": {
+          "id": "9cf16a38-a34f-4057-8536-923c993922ed"
+        },
+        "z": 12
+      },
+      "42d7942e-d569-4734-810f-2d04f9e7edf9": {
+        "source": {
+          "id": "17e58e86-83ce-49eb-a22e-ff922689cc5d",
+          "selector": "g:nth-child(1) g:nth-child(4) g:nth-child(2) circle:nth-child(1)     ",
+          "port": "AWS::DependencyLink-*"
+        },
+        "target": {
+          "id": "9cf16a38-a34f-4057-8536-923c993922ed"
+        },
+        "z": 12
+      },
+      "d019c913-ee0c-44ce-ab0c-2b7a91c0ea37": {
+        "source": {
+          "id": "17e58e86-83ce-49eb-a22e-ff922689cc5d",
+          "selector": "g:nth-child(1) g:nth-child(4) g:nth-child(2) circle:nth-child(1)     ",
+          "port": "AWS::DependencyLink-*"
+        },
+        "target": {
+          "id": "9cf16a38-a34f-4057-8536-923c993922ed"
+        },
+        "z": 12
+      },
+      "ba2ab3a2-66ad-4bb5-a710-882a128e1020": {
+        "source": {
+          "id": "17e58e86-83ce-49eb-a22e-ff922689cc5d",
+          "selector": "g:nth-child(1) g:nth-child(4) g:nth-child(2) circle:nth-child(1)     ",
+          "port": "AWS::DependencyLink-*"
+        },
+        "target": {
+          "id": "9cf16a38-a34f-4057-8536-923c993922ed"
+        },
+        "z": 12
+      },
+      "3988c19e-1b90-49d6-bb86-c1f0b589db05": {
+        "source": {
+          "id": "17e58e86-83ce-49eb-a22e-ff922689cc5d",
+          "selector": "g:nth-child(1) g:nth-child(4) g:nth-child(2) circle:nth-child(1)     ",
+          "port": "AWS::DependencyLink-*"
+        },
+        "target": {
+          "id": "9cf16a38-a34f-4057-8536-923c993922ed"
+        },
+        "z": 12
+      }
+    }
+  }
+}
