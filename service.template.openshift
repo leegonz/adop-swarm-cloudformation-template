@@ -1,0 +1,412 @@
+{
+  "Description": "EC2 platform extension template for ADOP/B",
+  "Mappings": {
+    "RegionMap": {
+      "eu-central-1": {
+        "CENTOSAMI": "ami-9bf712f4"
+      },
+      "eu-west-1": {
+        "CENTOSAMI": "ami-7abd0209"
+      },
+      "us-east-1": {
+        "CENTOSAMI": "ami-6d1c2007"
+      },
+      "us-west-2": {
+        "CENTOSAMI": "ami-d2c924b2"
+      },
+      "us-west-1": {
+        "CENTOSAMI": "ami-af4333cf"
+      },
+      "ap-southeast-1": {
+        "CENTOSAMI": "ami-f068a193"
+      },
+      "ap-southeast-2": {
+        "CENTOSAMI": "ami-fedafc9d"
+      },
+      "ap-northeast-1": {
+        "CENTOSAMI": "ami-eec1c380"
+      },
+      "ap-northeast-2": {
+        "CENTOSAMI": "ami-c74789a9"
+      },
+      "sa-east-1": {
+        "CENTOSAMI": "ami-26b93b4a"
+      }
+    }
+  },
+  "Outputs": {
+    "EC2InstancePrivateIp": {
+      "Description": "EC2Instance Private IP",
+      "Value": {
+        "Fn::GetAtt": [
+          "EC2Instance",
+          "PrivateIp"
+        ]
+      }
+    },
+    "EC2InstanceID": {
+      "Description": "EC2Instance ID",
+      "Value": {
+        "Ref": "EC2Instance"
+      }
+    }
+  },
+  "Parameters": {
+    "EnvironmentName": {
+      "Description": "The name of the EC2 instance being created",
+      "Type": "String"
+    },
+    "EnvironmentSubnet": {
+      "Description": "The ID of the subnet to create the instance in",
+      "Type": "AWS::EC2::Subnet::Id"
+    },
+    "InstanceType": {
+      "Default": "t2.large",
+      "Description": "EC2 instance type",
+      "Type": "String"
+    },
+    "KeyName": {
+      "Description": "Key-pair name to use.",
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "KeyPairContent": {
+      "Default": "",
+      "Description": "Open the SSH key pair you specified in the KeyName parameter, copy its content and paste it here.",
+      "NoEcho": "true",
+      "Type": "String"
+    },
+    "VPCId": {
+      "Description": "VPC ID where the instance will be created",
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "InboundCIDR": {
+      "Default": "10.0.0.0/24",
+      "Description": "Inbound Security Group CIDR Block",
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "DefaultSecurityGroup": {
+      "Properties": {
+        "GroupDescription": "Enabling access to all IPs and below listed ports",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": "0",
+            "IpProtocol": "tcp",
+            "ToPort": "65535"
+          },
+          {
+            "CidrIp": "0.0.0.0/0",
+            "FromPort": "0",
+            "IpProtocol": "udp",
+            "ToPort": "65535"
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Ref": "InboundCIDR"
+            },
+            "FromPort": "22",
+            "IpProtocol": "tcp",
+            "ToPort": "22"
+          },
+          {
+            "CidrIp": {
+              "Ref": "InboundCIDR"
+            },
+            "FromPort": "80",
+            "IpProtocol": "tcp",
+            "ToPort": "80"
+          },
+          {
+            "CidrIp": {
+              "Ref": "InboundCIDR"
+            },
+            "FromPort": "443",
+            "IpProtocol": "tcp",
+            "ToPort": "443"
+          },
+          {
+            "CidrIp": {
+              "Ref": "InboundCIDR"
+            },
+            "FromPort": "8443",
+            "IpProtocol": "tcp",
+            "ToPort": "8443"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPCId"
+        }
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "cf3ce75f-bb85-4d89-b728-2e38d23d19fc"
+        }
+      }
+    },
+    "EC2Instance": {
+      "Properties": {
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "DeleteOnTermination": "true",
+              "VolumeSize": 30
+            }
+          },
+          {
+            "DeviceName": "/dev/sdb",
+            "Ebs": {
+              "DeleteOnTermination": "true",
+              "VolumeSize": 100
+            }
+          }
+        ],
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "CENTOSAMI"
+          ]
+        },
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "NetworkInterfaces": [
+          {
+            "AssociatePublicIpAddress": "true",
+            "DeleteOnTermination": "true",
+            "DeviceIndex": "0",
+            "GroupSet": [
+              {
+                "Ref": "DefaultSecurityGroup"
+              }
+            ],
+            "SubnetId": {
+              "Ref": "EnvironmentSubnet"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Ref": "EnvironmentName"
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "yum -y install wget git net-tools bind-utils iptables-services bridge-utils bash-completion\n",
+                "yum -y update\n",
+                "yum -y install NetworkManager\n",
+                "systemctl enable NetworkManager\n",
+                "systemctl start NetworkManager\n",
+                "yum -y install docker\n",
+                "sed -i '/OPTIONS=.*/c\\OPTIONS=\"--selinux-enabled --insecure-registry 172.30.0.0/16 --log-opt max-size=1M --log-opt max-file=3\"' /etc/sysconfig/docker\n",
+                "vgcreate docker-vg /dev/xvdb\n",
+                "cat <<EOF > /etc/sysconfig/docker-storage-setup\n",
+                "DEV=/dev/xvdb\n",
+                "VG=docker-vg\n",
+                "EOF\n",
+                "rm -fr /var/lib/docker\n",
+                "docker-storage-setup\n",
+                "systemctl enable docker\n",
+                "echo \"Starting Docker...\"\n",
+				"sleep 120\n",
+                "systemctl start docker\n",
+                "yum -y install epel-release\n",
+                "sed -i -e \"s/^enabled=1/enabled=0/\" /etc/yum.repos.d/epel.repo\n",
+                "yum -y --enablerepo=epel install ansible pyOpenSSL\n",
+                "cd ~\n",
+                "git clone https://github.com/openshift/openshift-ansible -b master\n",
+                "sed -i 's/#host_key_checking/host_key_checking/g' /etc/ansible/ansible.cfg\n",
+                "export PUBLIC_IP=$(curl http://instance-data/latest/meta-data/public-ipv4)\n",
+                "export HOSTNAME=$(curl http://instance-data/latest/meta-data/hostname)\n",
+                "export EC2_AZ=$(curl http://instance-data/latest/meta-data/placement/availability-zone)\n",
+                "cat > /etc/ansible/hosts <<EOF\n",
+                "# Create an OSEv3 group that contains the masters and nodes groups\n",
+                "[OSEv3:children]\n",
+                "masters\n",
+                "nodes\n",
+                "\n",
+                "# Set variables common for all OSEv3 hosts\n",
+                "[OSEv3:vars]\n",
+                "# SSH user, this user should allow ssh based auth without requiring a password\n",
+                "ansible_ssh_user=centos\n",
+                "\n",
+                "# If ansible_ssh_user is not root, ansible_sudo must be set to true\n",
+                "ansible_sudo=true\n",
+                "\n",
+                "deployment_type=origin\n",
+                "\n",
+                "# uncomment the following to enable htpasswd authentication; defaults to DenyAllPasswordIdentityProvider\n",
+                "openshift_master_identity_providers=[{'name': 'htpasswd_auth', 'login': 'true', 'challenge': 'true', 'kind': 'HTPasswdPasswordIdentityProvider', 'filename': '/etc/origin/master/htpasswd'}]\n",
+                "\n",
+                "# Use something like apps.<public-ip>.xip.io if you don't have a custom domain\n",
+                "openshift_master_default_subdomain=apps.${PUBLIC_IP}.xip.io\n",
+                "\n",
+                "[masters]\n",
+                "${HOSTNAME}\n",
+                "\n",
+                "[nodes]\n",
+                "# Make the master node schedulable by default\n",
+                "${HOSTNAME} openshift_node_labels=\"{'region': 'infra', 'zone': '${EC2_AZ}'}\" openshift_schedulable=true\n",
+                "\n",
+                "# You can add some nodes below if you want!\n",
+                "#ip-10-0-0-65.us-west-2.compute.internal openshift_node_labels=\"{'region': 'primary', 'zone': 'us-west-2b'}\"\n",
+                "EOF\n",
+                "cat > /tmp/ssh_key <<EOF\n",
+                "\n",
+                {
+                  "Ref": "KeyPairContent"
+                },
+                "\n",
+                "EOF\n",
+                "cat /tmp/ssh_key |",
+                " sed \"s/BEGIN RSA PRIVATE KEY/begin/g\" |",
+                " sed \"s/END RSA PRIVATE KEY/end/g\" |",
+                " sed \"s/ /\\n/g\" | sed \"s/begin/BEGIN RSA PRIVATE KEY/g\" |",
+                " sed \"s/end/END RSA PRIVATE KEY/g\" > ~/sudo-user.pem\n",
+                "chmod 600 ~/sudo-user.pem && rm -f /tmp/ssh_key\n",
+                "ansible-playbook ~/openshift-ansible/playbooks/byo/config.yml --private-key ~/sudo-user.pem -u centos --become --become-user root\n",
+                "htpasswd -b /etc/origin/master/htpasswd admin admin123"
+              ]
+            ]
+          }
+        }
+      },
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "c0b44a93-2513-498e-b707-ff1e97529742"
+        }
+      }
+    },
+    "ControllerHandle": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle",
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "03df2d02-8c75-4ffd-9ef2-1394e6df2c83"
+        }
+      }
+    },
+    "ControllerCondition": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "DependsOn": "EC2Instance",
+      "Properties": {
+        "Handle": {
+          "Ref": "ControllerHandle"
+        },
+        "Timeout": "3500"
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "a4aa1d79-7930-4b05-b564-034fb93b0f0c"
+        }
+      }
+    },
+    "ElasticIP": {
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "InstanceId": {
+          "Ref": "EC2Instance"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "da23302f-0097-4741-87fa-279074d75a12"
+        }
+      }
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Designer": {
+      "03df2d02-8c75-4ffd-9ef2-1394e6df2c83": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 180,
+          "y": 140
+        },
+        "z": 1,
+        "embeds": []
+      },
+      "cf3ce75f-bb85-4d89-b728-2e38d23d19fc": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": -70,
+          "y": 140
+        },
+        "z": 1,
+        "embeds": []
+      },
+      "c0b44a93-2513-498e-b707-ff1e97529742": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 60,
+          "y": 210
+        },
+        "z": 1,
+        "embeds": [],
+        "isrelatedto": [
+          "cf3ce75f-bb85-4d89-b728-2e38d23d19fc"
+        ]
+      },
+      "a4aa1d79-7930-4b05-b564-034fb93b0f0c": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 180,
+          "y": 210
+        },
+        "z": 1,
+        "embeds": [],
+        "references": [
+          "03df2d02-8c75-4ffd-9ef2-1394e6df2c83"
+        ],
+        "dependson": [
+          "c0b44a93-2513-498e-b707-ff1e97529742"
+        ]
+      },
+      "da23302f-0097-4741-87fa-279074d75a12": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": -70,
+          "y": 210
+        },
+        "z": 0,
+        "embeds": [],
+        "isconnectedto": [
+          "c0b44a93-2513-498e-b707-ff1e97529742"
+        ]
+      }
+    }
+  }
+}
